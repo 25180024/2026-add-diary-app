@@ -25,13 +25,13 @@ start-lan:
 
 check:
     pnpm exec tsc --noEmit
-    pnpm exec eslint .
+    pnpm exec expo lint
 
 test:
     pnpm test
 
 doctor:
-    pnpm exec expo-doctor
+    pnpm dlx expo-doctor
 
 # ============================================================
 # auth
