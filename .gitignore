@@ -1,0 +1,43 @@
+# env / secrets
+.env
+.env.local
+.env.*.local
+
+# direnv
+.direnv/
+
+# node
+node_modules/
+
+# expo
+.expo/
+.expo-shared/
+dist/
+web-build/
+
+# native build artifacts
+ios/Pods/
+android/.gradle/
+android/app/build/
+android/build/
+*.ipa
+*.apk
+*.aab
+
+# logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+pnpm-debug.*
+
+# os
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/*.log
+.idea/
+
+# Nix
+result
+result-*

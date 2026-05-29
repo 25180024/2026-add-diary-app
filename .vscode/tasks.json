@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start Expo (tunnel)",
+      "type": "shell",
+      "command": "just start",
+      "problemMatcher": []
+    },
+    {
+      "label": "Check (typecheck + lint)",
+      "type": "shell",
+      "command": "just check",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build iOS",
+      "type": "shell",
+      "command": "just build-ios",
+      "problemMatcher": []
+    },
+    {
+      "label": "Build Android",
+      "type": "shell",
+      "command": "just build-android",
+      "problemMatcher": []
+    }
+  ]
+}
