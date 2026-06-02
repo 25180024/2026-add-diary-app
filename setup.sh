@@ -169,36 +169,102 @@ fi
 direnv allow .
 
 # ============================================================
-# VS Code (Windows-side install via winget if missing)
+# VS Code resolution
+#
+# Cannot rely on `command -v code` alone: students may have
+# appendWindowsPath=false in /etc/wsl.conf, which hides Windows PATH
+# from WSL even when VS Code is fully installed. Probe well-known
+# /mnt/c paths in that case.
+#
+# Same for winget.exe (lives under WindowsApps).
+#
+# Must invoke the WSL-side `code` bash wrapper (NOT cmd.exe /c code) so
+# VS Code engages Remote-WSL when opening project files.
 # ============================================================
 
-VSCODE_AVAILABLE=0
-if command -v code >/dev/null 2>&1; then
-  VSCODE_AVAILABLE=1
-elif command -v winget.exe >/dev/null 2>&1; then
-  info "Windows 側に VS Code をインストールします (winget, user scope)"
-  if winget.exe install \
-      --id Microsoft.VisualStudioCode \
-      --silent \
-      --scope user \
-      --accept-package-agreements \
-      --accept-source-agreements; then
-    VSCODE_AVAILABLE=1
-  else
-    warn "winget での VS Code インストールに失敗しました。https://code.visualstudio.com/ から手動でインストールしてください。"
+WIN_CMD="/mnt/c/Windows/System32/cmd.exe"
+
+get_win_username() {
+  if [ -x "$WIN_CMD" ]; then
+    "$WIN_CMD" /c "echo %USERNAME%" 2>/dev/null | tr -d '\r\n '
   fi
+}
+
+find_code_bin() {
+  if command -v code >/dev/null 2>&1; then
+    command -v code
+    return 0
+  fi
+  local win_user
+  win_user="$(get_win_username)"
+  local candidates=(
+    "/mnt/c/Program Files/Microsoft VS Code/bin/code"
+    "/mnt/c/Program Files (x86)/Microsoft VS Code/bin/code"
+  )
+  if [ -n "$win_user" ]; then
+    candidates+=("/mnt/c/Users/$win_user/AppData/Local/Programs/Microsoft VS Code/bin/code")
+  fi
+  for c in "${candidates[@]}"; do
+    if [ -x "$c" ]; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+find_winget_bin() {
+  if command -v winget.exe >/dev/null 2>&1; then
+    command -v winget.exe
+    return 0
+  fi
+  local win_user
+  win_user="$(get_win_username)"
+  if [ -n "$win_user" ]; then
+    local path="/mnt/c/Users/$win_user/AppData/Local/Microsoft/WindowsApps/winget.exe"
+    if [ -x "$path" ]; then
+      echo "$path"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+CODE_BIN="$(find_code_bin || true)"
+
+VSCODE_AVAILABLE=0
+if [ -n "$CODE_BIN" ]; then
+  VSCODE_AVAILABLE=1
+  info "VS Code を検出しました: $CODE_BIN"
 else
-  warn "winget.exe が見つかりません。https://code.visualstudio.com/ から VS Code を手動でインストールしてください。"
+  WINGET_BIN="$(find_winget_bin || true)"
+  if [ -n "$WINGET_BIN" ]; then
+    info "Windows 側に VS Code をインストールします (winget, user scope)"
+    if "$WINGET_BIN" install \
+        --id Microsoft.VisualStudioCode \
+        --silent \
+        --scope user \
+        --accept-package-agreements \
+        --accept-source-agreements; then
+      CODE_BIN="$(find_code_bin || true)"
+      if [ -n "$CODE_BIN" ]; then
+        VSCODE_AVAILABLE=1
+      else
+        warn "VS Code をインストールしましたが code 実行ファイルを見つけられませんでした。"
+      fi
+    else
+      warn "winget での VS Code インストールに失敗しました。https://code.visualstudio.com/ から手動でインストールしてください。"
+    fi
+  else
+    warn "VS Code も winget も見つかりません。https://code.visualstudio.com/ から VS Code を手動でインストールしてください。"
+  fi
 fi
 
-# After a fresh winget install, `code` is not yet on the WSL-side PATH
-# (WSL imports Windows PATH at shell startup). Route through powershell.exe,
-# which reads a fresh Windows PATH from registry on each invocation.
 run_code() {
-  if command -v code >/dev/null 2>&1; then
-    code "$@"
+  if [ -n "$CODE_BIN" ]; then
+    "$CODE_BIN" "$@"
   else
-    powershell.exe -NoProfile -Command "code $*"
+    return 1
   fi
 }
 
