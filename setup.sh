@@ -268,6 +268,17 @@ run_code() {
   fi
 }
 
+# Expose `code` as a normal command in the student's PATH. With
+# appendWindowsPath=false the Windows VS Code bin dir never enters WSL
+# PATH, so we drop a symlink into /usr/local/bin (which IS in PATH).
+# The VS Code bash wrapper uses readlink -f to find its real location,
+# so symlinking it works correctly.
+if [ "$VSCODE_AVAILABLE" = "1" ] && [ -n "$CODE_BIN" ] && [ ! -e /usr/local/bin/code ] \
+   && [ "$CODE_BIN" != "/usr/local/bin/code" ]; then
+  info "code コマンドを /usr/local/bin/code にリンクします"
+  sudo ln -s "$CODE_BIN" /usr/local/bin/code
+fi
+
 # ============================================================
 # VS Code Extensions
 # ============================================================
