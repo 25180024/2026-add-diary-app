@@ -117,7 +117,7 @@ if ! command -v nix >/dev/null 2>&1; then
 fi
 
 # ============================================================
-# direnv hook (bashrc)
+# direnv hook (bashrc / zshrc)
 # ============================================================
 
 if ! grep -q 'direnv hook bash' "$HOME/.bashrc" 2>/dev/null; then
@@ -127,6 +127,17 @@ if ! grep -q 'direnv hook bash' "$HOME/.bashrc" 2>/dev/null; then
 # direnv (added by diary-app setup.sh)
 eval "$(direnv hook bash)"
 EOF
+fi
+
+if command -v zsh >/dev/null 2>&1; then
+  if ! grep -q 'direnv hook zsh' "$HOME/.zshrc" 2>/dev/null; then
+    info "direnv フックを ~/.zshrc に追加します"
+    cat >> "$HOME/.zshrc" <<'EOF'
+
+# direnv (added by diary-app setup.sh)
+eval "$(direnv hook zsh)"
+EOF
+  fi
 fi
 
 # ============================================================
@@ -150,20 +161,57 @@ fi
 direnv allow .
 
 # ============================================================
+# VS Code (Windows-side install via winget if missing)
+# ============================================================
+
+VSCODE_AVAILABLE=0
+if command -v code >/dev/null 2>&1; then
+  VSCODE_AVAILABLE=1
+elif command -v winget.exe >/dev/null 2>&1; then
+  info "Windows 側に VS Code をインストールします (winget, user scope)"
+  if winget.exe install \
+      --id Microsoft.VisualStudioCode \
+      --silent \
+      --scope user \
+      --accept-package-agreements \
+      --accept-source-agreements; then
+    VSCODE_AVAILABLE=1
+  else
+    warn "winget での VS Code インストールに失敗しました。https://code.visualstudio.com/ から手動でインストールしてください。"
+  fi
+else
+  warn "winget.exe が見つかりません。https://code.visualstudio.com/ から VS Code を手動でインストールしてください。"
+fi
+
+# After a fresh winget install, `code` is not yet on the WSL-side PATH
+# (WSL imports Windows PATH at shell startup). Route through powershell.exe,
+# which reads a fresh Windows PATH from registry on each invocation.
+run_code() {
+  if command -v code >/dev/null 2>&1; then
+    code "$@"
+  else
+    powershell.exe -NoProfile -Command "code $*"
+  fi
+}
+
+# ============================================================
 # VS Code Extensions
 # ============================================================
 
-if command -v code >/dev/null 2>&1; then
+if [ "$VSCODE_AVAILABLE" = "1" ]; then
   info "VS Code 拡張をインストールします"
-  code --install-extension ms-vscode-remote.remote-wsl   || true
-  code --install-extension esbenp.prettier-vscode        || true
-  code --install-extension dbaeumer.vscode-eslint        || true
-  code --install-extension usernamehw.errorlens          || true
-  code --install-extension expo.vscode-expo-tools        || true
-  code --install-extension mkhl.direnv                   || true
-  code --install-extension sst-dev.opencode              || true
+  for ext in \
+    ms-vscode-remote.remote-wsl \
+    esbenp.prettier-vscode \
+    dbaeumer.vscode-eslint \
+    usernamehw.errorlens \
+    expo.vscode-expo-tools \
+    mkhl.direnv \
+    sst-dev.opencode; do
+    run_code --install-extension "$ext" || warn "拡張 $ext のインストールに失敗しました"
+  done
 else
-  warn "code コマンドが見つかりません。VS Code の 'Shell Command: Install code command in PATH' を実行してください。"
+  warn "VS Code が利用できないため、拡張のインストールをスキップしました。"
 fi
 
 # ============================================================
@@ -181,9 +229,9 @@ fi
 # Open VS Code (WSL Remote として起動)
 # ============================================================
 
-if command -v code >/dev/null 2>&1; then
+if [ "$VSCODE_AVAILABLE" = "1" ]; then
   info "VS Code を開きます"
-  code .
+  run_code .
 fi
 
 # ============================================================
@@ -194,15 +242,22 @@ cat <<EOF
 
 ✅ セットアップが完了しました。
 
+新しいシェルを起動して、プロジェクトディレクトリに移動した状態にします。
+(direnv が走り、Nix シェル経由で 'just' などが使えるようになります)
+元のシェルに戻りたいときは 'exit' と入力してください。
+
 次にやること:
 
   1. VS Code で .env.local を開き、ANTHROPIC_API_KEY を記入する
   2. スマホに Expo Go をインストールする
        iPhone  -> App Store
        Android -> Google Play
-  3. VS Code のターミナルで:
+  3. このターミナルで:
        just start
 
 プロジェクトの場所: $PROJECT_DIR
 
 EOF
+
+cd "$PROJECT_DIR"
+exec "${SHELL:-/bin/bash}" -l
