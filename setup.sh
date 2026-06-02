@@ -76,13 +76,22 @@ gh auth status >/dev/null 2>&1 || gh auth login
 
 mkdir -p "$(dirname "$PROJECT_DIR")"
 
-if [ ! -d "$PROJECT_DIR/.git" ]; then
-  info "リポジトリを fork して clone します -> $PROJECT_DIR"
+REPO="ncc-toda/2026-add-diary-app"
+REPO_OWNER="${REPO%%/*}"
 
-  gh repo fork ncc-toda/2026-add-diary-app \
-    --clone \
-    --default-branch-only \
-    -- "$PROJECT_DIR"
+if [ ! -d "$PROJECT_DIR/.git" ]; then
+  current_user="$(gh api user -q .login 2>/dev/null || true)"
+
+  if [ -n "$current_user" ] && [ "$current_user" = "$REPO_OWNER" ]; then
+    info "リポジトリオーナー ($current_user) でログイン中のため fork はスキップし clone します -> $PROJECT_DIR"
+    gh repo clone "$REPO" "$PROJECT_DIR" -- --single-branch
+  else
+    info "リポジトリを fork して clone します -> $PROJECT_DIR"
+    gh repo fork "$REPO" \
+      --clone \
+      --default-branch-only \
+      -- "$PROJECT_DIR"
+  fi
 else
   info "リポジトリは既に存在します: $PROJECT_DIR"
 fi
