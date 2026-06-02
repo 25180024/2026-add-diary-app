@@ -140,13 +140,11 @@ fi
 # ============================================================
 
 if [ ! -f ".env.local" ]; then
-  if [ -f ".env.local.example" ]; then
-    cp .env.local.example .env.local
-  else
-    cat > .env.local <<'EOF'
+  cat > .env.local <<'EOF'
+# Anthropic API Key (for opencode VS Code extension)
+# Get yours from https://console.anthropic.com/
 ANTHROPIC_API_KEY=
 EOF
-  fi
   chmod 600 .env.local
   info ".env.local の雛形を作成しました。後で VS Code で開いて API Key を記入してください。"
 fi
