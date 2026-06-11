@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import {
+  ActivityIndicator,
+  FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -9,7 +10,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
-import { useEntries } from '../store/entries';
+import { useInfiniteEntries } from '../hooks/useInfiniteEntries';
+import { useEntrySearch } from '../hooks/useEntrySearch';
+import { SearchBar } from '../components/SearchBar';
+import { EntryCard } from '../components/EntryCard';
+import { PAPER, INK, SUB, ACCENT } from '../constants/colors';
+import type { Entry } from '../types/entry';
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -25,67 +31,110 @@ function formatDay(date: Date) {
 }
 
 export default function Index() {
-  const { entries } = useEntries();
   const today = useMemo(() => new Date(), []);
   const { day: todayDay, weekday: todayWeekday } = formatDay(today);
 
+  const { entries, loadMore, isLoading, reload } = useInfiniteEntries();
+
+  const {
+    query,
+    setQuery,
+    dateRange,
+    setDateRange,
+    searchResults,
+    isSearching,
+    clearSearch,
+  } = useEntrySearch(entries);
+
+  const displayEntries: Entry[] = isSearching ? searchResults : entries;
+
   const openNew = () => router.push('/new');
+
+  const handleEndReached = () => {
+    if (!isSearching) void loadMore();
+  };
+
+  const renderFooter = () => {
+    if (!isLoading) return null;
+    return (
+      <View style={styles.loadingFooter}>
+        <ActivityIndicator color={ACCENT} />
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+      <FlatList
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.header}>
-          <Text style={styles.headerMonth}>{formatHeader(today)}</Text>
-          <Text style={styles.headerTitle}>日記</Text>
-        </View>
+        data={displayEntries}
+        keyExtractor={(item) => item.id ?? item.title}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.3}
+        ListFooterComponent={renderFooter}
+        ListHeaderComponent={
+          <>
+            {/* ヘッダー */}
+            <View style={styles.header}>
+              <Text style={styles.headerMonth}>{formatHeader(today)}</Text>
+              <Text style={styles.headerTitle}>日記</Text>
+            </View>
 
-        <Pressable style={styles.todayCard} onPress={openNew}>
-          <View style={styles.todayDateColumn}>
-            <Text style={styles.todayWeekday}>{todayWeekday}</Text>
-            <Text style={styles.todayDay}>{todayDay}</Text>
-          </View>
-          <View style={styles.todayBody}>
-            <Text style={styles.todayLabel}>今日の記録</Text>
-            <Text style={styles.todayPrompt}>
-              タップして、今日のことを書きとめよう。
+            {/* 今日のカード */}
+            <Pressable style={styles.todayCard} onPress={openNew}>
+              <View style={styles.todayDateColumn}>
+                <Text style={styles.todayWeekday}>{todayWeekday}</Text>
+                <Text style={styles.todayDay}>{todayDay}</Text>
+              </View>
+              <View style={styles.todayBody}>
+                <Text style={styles.todayLabel}>今日の記録</Text>
+                <Text style={styles.todayPrompt}>
+                  タップして、今日のことを書きとめよう。
+                </Text>
+              </View>
+              <Text style={styles.todayChevron}>＋</Text>
+            </Pressable>
+
+            {/* 検索バー */}
+            <View style={styles.searchBarWrapper}>
+              <SearchBar
+                query={query}
+                onQueryChange={setQuery}
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+                onClear={clearSearch}
+              />
+            </View>
+
+            <Text style={styles.sectionLabel}>
+              {isSearching
+                ? `検索結果 ${displayEntries.length}件`
+                : 'これまでの日記'}
             </Text>
-          </View>
-          <Text style={styles.todayChevron}>＋</Text>
-        </Pressable>
-
-        <Text style={styles.sectionLabel}>これまでの日記</Text>
-
-        <View style={styles.list}>
-          {entries.map((entry) => {
-            const { day, weekday } = formatDay(entry.date);
-            return (
-              <Pressable key={entry.id} style={styles.entry}>
-                <View style={styles.entryDateColumn}>
-                  <Text style={styles.entryWeekday}>{weekday}</Text>
-                  <Text style={styles.entryDay}>{day}</Text>
-                </View>
-                <View style={styles.entryBody}>
-                  <View style={styles.entryTitleRow}>
-                    <Text style={styles.entryMood}>{entry.mood}</Text>
-                    <Text style={styles.entryTitle} numberOfLines={1}>
-                      {entry.title || '(無題)'}
-                    </Text>
-                  </View>
-                  {entry.body.length > 0 && (
-                    <Text style={styles.entryExcerpt} numberOfLines={2}>
-                      {entry.body}
-                    </Text>
-                  )}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+          </>
+        }
+        renderItem={({ item }) => (
+          <EntryCard
+            entry={item}
+            onPress={() => router.push(`/entries/${item.id}` as never)}
+          />
+        )}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ListEmptyComponent={
+          !isLoading ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyText}>
+                {isSearching ? '該当する日記がありません' : 'まだ日記がありません'}
+              </Text>
+            </View>
+          ) : null
+        }
+        // pull-to-refresh
+        refreshing={isLoading && entries.length === 0}
+        onRefresh={reload}
+      />
 
       <Pressable style={styles.fab} onPress={openNew}>
         <Text style={styles.fabIcon}>✎</Text>
@@ -94,21 +143,15 @@ export default function Index() {
   );
 }
 
-const PAPER = '#FAF6EE';
-const INK = '#2B2A28';
-const SUB = '#8A8278';
-const ACCENT = '#8B5E3C';
-const CARD = '#FFFFFF';
-
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: PAPER,
   },
-  scroll: {
+  list: {
     flex: 1,
   },
-  scrollContent: {
+  listContent: {
     paddingHorizontal: 20,
     paddingBottom: 120,
   },
@@ -131,7 +174,7 @@ const styles = StyleSheet.create({
   todayCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: CARD,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 18,
     gap: 16,
@@ -140,6 +183,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
+    marginBottom: 16,
   },
   todayDateColumn: {
     alignItems: 'center',
@@ -175,61 +219,31 @@ const styles = StyleSheet.create({
     color: ACCENT,
     fontWeight: '300',
   },
+  searchBarWrapper: {
+    marginBottom: 8,
+  },
   sectionLabel: {
     fontSize: 12,
     color: SUB,
     letterSpacing: 2,
-    marginTop: 28,
+    marginTop: 12,
     marginBottom: 12,
     paddingHorizontal: 4,
   },
-  list: {
-    gap: 14,
+  separator: {
+    height: 14,
   },
-  entry: {
-    flexDirection: 'row',
-    gap: 16,
-    backgroundColor: CARD,
-    borderRadius: 14,
-    padding: 16,
-  },
-  entryDateColumn: {
+  loadingFooter: {
+    paddingVertical: 20,
     alignItems: 'center',
-    width: 44,
-    paddingTop: 2,
   },
-  entryWeekday: {
-    fontSize: 11,
-    color: SUB,
-  },
-  entryDay: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: INK,
-    marginTop: 2,
-  },
-  entryBody: {
-    flex: 1,
-  },
-  entryTitleRow: {
-    flexDirection: 'row',
+  empty: {
+    paddingVertical: 40,
     alignItems: 'center',
-    gap: 6,
   },
-  entryMood: {
-    fontSize: 16,
-  },
-  entryTitle: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    color: INK,
-  },
-  entryExcerpt: {
-    fontSize: 13,
+  emptyText: {
+    fontSize: 14,
     color: SUB,
-    marginTop: 6,
-    lineHeight: 20,
   },
   fab: {
     position: 'absolute',

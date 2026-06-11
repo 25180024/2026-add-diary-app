@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,18 +12,28 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
-import { useEntries } from '../store/entries';
-import { uploadImage } from '../services/storage';
-import { EmojiPicker, PRESET_EMOJIS } from '../components/EmojiPicker';
-import { ImagePickerGrid } from '../components/ImagePickerGrid';
-import { PAPER, INK, SUB, ACCENT, BORDER } from '../constants/colors';
+import { fetchEntryById } from '../../../services/entries';
+import { uploadImage, deleteImage } from '../../../services/storage';
+import { useEntries } from '../../../store/entries';
+import { EmojiPicker } from '../../../components/EmojiPicker';
+import { ImagePickerGrid } from '../../../components/ImagePickerGrid';
+import { PAPER, INK, SUB, ACCENT, BORDER } from '../../../constants/colors';
+import type { Entry } from '../../../types/entry';
 
-export default function NewEntry() {
-  const { addEntry, updateEntry } = useEntries();
-  const [icon, setIcon] = useState<string>(PRESET_EMOJIS[0]);
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+export default function EditEntry() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { updateEntry } = useEntries();
+
+  const [original, setOriginal] = useState<Entry | null>(null);
+  const [isLoadingEntry, setIsLoadingEntry] = useState(true);
+
+  // フォーム状態
+  const [icon, setIcon] = useState('');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [date, setDate] = useState<Date>(new Date());
@@ -30,7 +41,28 @@ export default function NewEntry() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // icon / title / body / date がすべて入力済みの場合のみ保存可能
+  // 既存エントリをロードして初期値をセット
+  useEffect(() => {
+    if (!id) return;
+    fetchEntryById(id)
+      .then((entry) => {
+        setOriginal(entry);
+        setIcon(entry.icon);
+        setTitle(entry.title);
+        setBody(entry.body);
+        setDate(entry.date);
+        setImages(entry.images);
+      })
+      .catch((err: unknown) => {
+        Alert.alert(
+          'エラー',
+          err instanceof Error ? err.message : '取得に失敗しました',
+        );
+        router.back();
+      })
+      .finally(() => setIsLoadingEntry(false));
+  }, [id]);
+
   const canSave =
     icon.trim().length > 0 &&
     title.trim().length > 0 &&
@@ -43,24 +75,33 @@ export default function NewEntry() {
   };
 
   const handleSave = async () => {
-    if (!canSave) return;
+    if (!canSave || !id || !original) return;
     setIsSaving(true);
     try {
-      const entry = await addEntry({
+      // 削除された画像を Storage から消す
+      const removedUrls = original.images.filter(
+        (url) => !images.includes(url),
+      );
+      await Promise.all(removedUrls.map((url) => deleteImage(url)));
+
+      // 新しく追加されたローカル URI を Storage にアップロード
+      const isLocalUri = (uri: string) =>
+        uri.startsWith('file://') || uri.startsWith('content://') || uri.startsWith('/');
+
+      const uploadedImages = await Promise.all(
+        images.map(async (uri) => {
+          if (isLocalUri(uri)) return uploadImage(id, uri);
+          return uri; // 既存の Storage URL はそのまま
+        }),
+      );
+
+      await updateEntry(id, {
         icon,
         title: title.trim(),
         body: body.trim(),
         date,
-        images: [], // 画像は後で Storage URL に差し替え
+        images: uploadedImages,
       });
-
-      // 画像をアップロードして URL に変換
-      if (images.length > 0 && entry.id) {
-        const uploadedUrls = await Promise.all(
-          images.map((uri) => uploadImage(entry.id!, uri)),
-        );
-        await updateEntry(entry.id, { images: uploadedUrls });
-      }
 
       router.back();
     } catch (err) {
@@ -73,16 +114,24 @@ export default function NewEntry() {
     }
   };
 
-  const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
   const dateLabel = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}(${WEEKDAYS[date.getDay()]})`;
+
+  if (isLoadingEntry) {
+    return (
+      <SafeAreaView style={styles.center} edges={['top']}>
+        <ActivityIndicator color={ACCENT} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      {/* ヘッダー */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
           <Text style={styles.cancel}>キャンセル</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>新しい記録</Text>
+        <Text style={styles.headerTitle}>日記を編集</Text>
         <Pressable onPress={handleSave} hitSlop={12} disabled={!canSave}>
           <Text style={[styles.save, !canSave && styles.saveDisabled]}>
             {isSaving ? '保存中…' : '保存'}
@@ -170,6 +219,12 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: PAPER,
+  },
+  center: {
+    flex: 1,
+    backgroundColor: PAPER,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   flex: {
     flex: 1,
